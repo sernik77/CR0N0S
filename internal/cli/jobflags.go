@@ -137,7 +137,7 @@ func (f *jobFlags) schedule(cmd *cobra.Command, now time.Time) (model.Schedule, 
 		if err != nil {
 			return s, err
 		}
-		s = model.Schedule{Kind: model.ScheduleOnce, At: now.Add(d).Truncate(time.Second)}
+		s = model.Schedule{Kind: model.ScheduleOnce, At: now.Add(d).Truncate(time.Second), In: model.Duration(d)}
 	case changed(cmd, "cron"):
 		if _, err := sched.ParseCron(f.cron); err != nil {
 			return s, err
@@ -323,6 +323,9 @@ func exportSpec(j *model.Job) *model.Job {
 	c := j.Clone()
 	c.Status, c.NextRun, c.LastRun, c.LastStatus, c.RemindedAt, c.PausedAt = "", nil, nil, "", nil, nil
 	c.Paused = false
+	if c.Schedule.In > 0 {
+		c.Schedule.At = time.Time{} // re-resolved relative to the next registration
+	}
 	return c
 }
 

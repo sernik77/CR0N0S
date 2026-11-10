@@ -65,6 +65,7 @@ func newTemplateCmd() *cobra.Command {
 				if err := f.apply(cmd, spec, time.Now()); err != nil {
 					return err
 				}
+				spec = exportSpec(spec)
 				if err := st.SaveTemplate(&model.Template{Name: args[0], Description: tdesc, Spec: *spec}); err != nil {
 					return err
 				}

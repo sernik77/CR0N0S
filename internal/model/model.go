@@ -64,11 +64,11 @@ type Job struct {
 	Script       string            `json:"script,omitempty" toml:"script,omitempty"`
 	Args         []string          `json:"args,omitempty" toml:"args,omitempty"`
 	Env          map[string]string `json:"env,omitempty" toml:"env,omitempty"`
-	Timeout      Duration          `json:"timeout,omitempty" toml:"timeout,omitempty"`
+	Timeout      Duration          `json:"timeout,omitempty" toml:"timeout,omitempty,omitzero"`
 	Conditions   *Condition        `json:"conditions,omitempty" toml:"conditions,omitempty"`
 	Logic        []Step            `json:"logic,omitempty" toml:"logic,omitempty"`
 	Hooks        Hooks             `json:"hooks,omitempty" toml:"hooks,omitempty"`
-	RemindBefore Duration          `json:"remind_before,omitempty" toml:"remind_before,omitempty"`
+	RemindBefore Duration          `json:"remind_before,omitempty" toml:"remind_before,omitempty,omitzero"`
 	Catchup      string            `json:"catchup,omitempty" toml:"catchup,omitempty"`
 	Template     string            `json:"template,omitempty" toml:"template,omitempty"`
 	Tags         []string          `json:"tags,omitempty" toml:"tags,omitempty"`
@@ -89,11 +89,12 @@ type Job struct {
 type Schedule struct {
 	Kind     string    `json:"kind" toml:"kind"`
 	At       time.Time `json:"at,omitempty" toml:"at,omitempty"`
-	Cron     string    `json:"cron,omitempty" toml:"cron,omitempty"`
-	Every    Duration  `json:"every,omitempty" toml:"every,omitempty"`
+	In       Duration  `json:"in,omitempty" toml:"in,omitempty,omitzero"` // relative once-time, resolved at registration (templates)
+	Cron    string    `json:"cron,omitempty" toml:"cron,omitempty"`
+	Every    Duration  `json:"every,omitempty" toml:"every,omitempty,omitzero"`
 	Watch    []string  `json:"watch,omitempty" toml:"watch,omitempty"`
 	Events   []string  `json:"events,omitempty" toml:"events,omitempty"` // create, write, remove, rename, chmod
-	Debounce Duration  `json:"debounce,omitempty" toml:"debounce,omitempty"`
+	Debounce Duration  `json:"debounce,omitempty" toml:"debounce,omitempty,omitzero"`
 }
 
 // Condition is a declarative condition tree. Exactly one of the combinators
@@ -124,7 +125,7 @@ type Condition struct {
 	Days    []string    `json:"days,omitempty" toml:"days,omitempty"`
 	Job     string      `json:"job,omitempty" toml:"job,omitempty"`
 	Status  string      `json:"status,omitempty" toml:"status,omitempty"`
-	Timeout Duration    `json:"timeout,omitempty" toml:"timeout,omitempty"`
+	Timeout Duration    `json:"timeout,omitempty" toml:"timeout,omitempty,omitzero"`
 }
 
 // Step is one node of a job's control flow. A step does exactly one of:
@@ -272,7 +273,7 @@ func (j *Job) Validate() error {
 	}
 	switch j.Schedule.Kind {
 	case ScheduleOnce:
-		if j.Schedule.At.IsZero() {
+		if j.Schedule.At.IsZero() && j.Schedule.In <= 0 {
 			return fmt.Errorf("once schedule needs an execution time")
 		}
 	case ScheduleCron:

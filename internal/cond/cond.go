@@ -52,14 +52,16 @@ func Summarize(c *model.Condition, env Env) Summary {
 	}
 	r := Evaluate(c, env)
 	s := Summary{Met: r.Met, Tree: &r}
-	walk(c, &r, &s)
+	walk(c, &r, &s, false)
 	return s
 }
 
-func walk(c *model.Condition, r *Result, s *Summary) {
+// walk counts primitive conditions; a negated primitive is satisfied when
+// the primitive itself is not met.
+func walk(c *model.Condition, r *Result, s *Summary, negated bool) {
 	if c.Type != "" {
 		s.Count++
-		if r.Met {
+		if r.Met != negated {
 			s.MetCount++
 		}
 		if c.Type == "job_status" {
@@ -67,13 +69,16 @@ func walk(c *model.Condition, r *Result, s *Summary) {
 		}
 		return
 	}
-	children := append(append([]model.Condition{}, c.All...), c.Any...)
 	if c.Not != nil {
-		children = append(children, *c.Not)
+		if len(r.Children) == 1 {
+			walk(c.Not, &r.Children[0], s, !negated)
+		}
+		return
 	}
+	children := append(append([]model.Condition{}, c.All...), c.Any...)
 	for i := range children {
 		if i < len(r.Children) {
-			walk(&children[i], &r.Children[i], s)
+			walk(&children[i], &r.Children[i], s, negated)
 		}
 	}
 }

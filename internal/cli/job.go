@@ -115,12 +115,16 @@ func finishNew(j *model.Job, now time.Time) error {
 	if j.Schedule.Kind == "" {
 		return fmt.Errorf("a schedule is required: --at, --in, --cron, --every, --watch or --manual")
 	}
+	if s := &j.Schedule; s.Kind == model.ScheduleOnce && s.At.IsZero() && s.In > 0 {
+		s.At = now.Add(s.In.D()).Truncate(time.Second)
+	}
 	if j.Schedule.Kind == model.ScheduleOnce && !j.Schedule.At.After(now) {
 		return fmt.Errorf("execution time %s is in the past", j.Schedule.At.Format(time.RFC3339))
 	}
 	if err := checkSuperuser(j); err != nil {
 		return err
 	}
+	j.RegisteredAt = now.Truncate(time.Second)
 	n, err := sched.Next(j, now)
 	j.NextRun = n
 	return err
@@ -606,6 +610,9 @@ func reschedule(j *model.Job, now time.Time, scheduleChanged bool) error {
 		return nil
 	}
 	if j.Schedule.Kind == model.ScheduleOnce {
+		if j.Schedule.At.IsZero() && j.Schedule.In > 0 {
+			j.Schedule.At = now.Add(j.Schedule.In.D()).Truncate(time.Second)
+		}
 		if !j.Schedule.At.After(now) {
 			return fmt.Errorf("execution time is in the past")
 		}

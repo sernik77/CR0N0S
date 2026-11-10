@@ -45,6 +45,9 @@ func Next(j *model.Job, from time.Time) (*time.Time, error) {
 			return nil, fmt.Errorf("interval must be positive")
 		}
 		base := j.RegisteredAt
+		if base.IsZero() {
+			base = from
+		}
 		if j.LastRun != nil {
 			base = *j.LastRun
 		}
