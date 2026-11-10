@@ -1,0 +1,21 @@
+# Private design notes
+DESIGN.md
+
+# Databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Build output
+/cr0
+/bin/
+/dist/
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
