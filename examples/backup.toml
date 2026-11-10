@@ -1,0 +1,46 @@
+# Example job spec: register with `cr0 job register -f examples/backup.toml`.
+# Flags override fields, e.g. `-p /srv/data` or `--cron "0 4 * * *"`.
+title = "nightly backup"
+description = "Back up ~/docs when the backup disk is mounted, then prune old snapshots"
+path = "/tmp"
+interpreter = "bash"
+command = "restic -r /mnt/backup/repo backup ~/docs"
+timeout = "2h"
+remind_before = "10m"
+catchup = "once"
+tags = ["backup"]
+
+[schedule]
+kind = "cron"
+cron = "0 3 * * *"
+
+# Gate: the job runs only if all conditions hold at execution time.
+[conditions]
+[[conditions.all]]
+type = "dir_exists"
+path = "/mnt/backup/repo"
+[[conditions.all]]
+not = { type = "process", name = "restic" }
+
+# Control flow: if / elif / else / while. A "main" step runs `command`.
+[[logic]]
+name = "backup"
+main = true
+
+[[logic]]
+name = "prune on sundays"
+if = { type = "weekday", days = ["sun"] }
+then = [{ run = "restic -r /mnt/backup/repo forget --keep-daily 7 --prune" }]
+else = [{ run = "echo 'no prune today'" }]
+
+[[hooks.on_success]]
+type = "notify"
+message = "{title}: done"
+
+[[hooks.on_fail]]
+type = "notify"
+message = "{title} failed with exit {exit}"
+
+[[hooks.on_error]]
+type = "webhook"
+url = "https://example.invalid/hooks/cr0"

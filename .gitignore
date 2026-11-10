@@ -19,3 +19,6 @@ DESIGN.md
 .vscode/
 *.swp
 .DS_Store
+
+# Claude Code worktrees
+.claude/
