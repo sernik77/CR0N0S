@@ -138,7 +138,10 @@ func (r *Runner) Prepare(j *model.Job, argv []string) (*Prepared, error) {
 		if j.Superuser {
 			target = "root"
 		}
-		if target != "" && target != "root" {
+		if target == "" {
+			return nil, errors.New("refusing to run a non-superuser job as root: set the job's user")
+		}
+		if target != "root" {
 			cred, home, err := lookupCred(target)
 			if err != nil {
 				return nil, err
@@ -230,6 +233,10 @@ func Exec(ctx context.Context, p *Prepared, timeout time.Duration) Result {
 			res.Status, res.ExitCode, res.Err = model.RunUnknown, -1, "killed by "+ws.Signal().String()
 		} else {
 			res.Status, res.ExitCode = model.RunFail, ee.ExitCode()
+			// pkexec: 126 = authorization dismissed/denied, 127 = not authorized.
+			if p.Argv[0] == "pkexec" && (res.ExitCode == 126 || res.ExitCode == 127) {
+				res.Status, res.Err = model.RunError, "pkexec authorization failed; the job did not run"
+			}
 		}
 	default:
 		res.Status, res.ExitCode, res.Err = model.RunError, -1, err.Error()

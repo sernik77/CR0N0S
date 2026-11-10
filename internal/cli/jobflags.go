@@ -20,23 +20,23 @@ import (
 // jobFlags are the job-definition flags shared by register, modify and
 // template add. Only flags the user actually set are applied.
 type jobFlags struct {
-	title, desc                          string
-	at, in, cron, every                  string
-	watch, events                        []string
-	debounce                             string
-	manual                               bool
-	user, path                           string
-	sudo                                 bool
-	sudoMode                             string
-	command, script, shell               string
-	args, env                            []string
-	timeout, remind, catchup             string
-	when, whenAny                        []string
-	noConditions                         bool
+	title, desc                           string
+	at, in, cron, every                   string
+	watch, events                         []string
+	debounce                              string
+	manual                                bool
+	user, path                            string
+	sudo                                  bool
+	sudoMode                              string
+	command, script, shell                string
+	args, env                             []string
+	timeout, remind, catchup              string
+	when, whenAny                         []string
+	noConditions                          bool
 	onSuccess, onFail, onError, onUnknown []string
-	tags                                 []string
-	file                                 string
-	disarmed                             bool
+	tags                                  []string
+	file                                  string
+	disarmed                              bool
 }
 
 func (f *jobFlags) bind(fs *pflag.FlagSet, withSpec bool) {

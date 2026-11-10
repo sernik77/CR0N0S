@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -130,11 +131,29 @@ func finishNew(j *model.Job, now time.Time) error {
 	return err
 }
 
+// checkSuperuser validates the job's authority level for the current scope.
+// In the system (root) scope a job that is not a superuser job must name the
+// user it runs as; it defaults to the user who invoked pkexec or sudo.
 func checkSuperuser(j *model.Job) error {
-	if j.Superuser && j.SudoMode == model.SudoPreauth && os.Geteuid() != 0 {
-		return fmt.Errorf("pre-authorized superuser jobs live in the system scope; authorize now with:\n  pkexec cr0 --system job register ...\n(or use --sudo-mode exec to be asked by pkexec at execution time)")
+	if os.Geteuid() != 0 {
+		if j.Superuser && j.SudoMode == model.SudoPreauth {
+			return fmt.Errorf("pre-authorized superuser jobs live in the system scope; authorize now with:\n" +
+				"  pkexec cr0 --system job register -p \"$PWD\" ...\n(or use --sudo-mode exec to be asked by pkexec at execution time)")
+		}
+		return nil
 	}
-	return nil
+	if j.Superuser || j.User != "" {
+		return nil
+	}
+	for _, env := range []string{"PKEXEC_UID", "SUDO_UID"} {
+		if uid := os.Getenv(env); uid != "" {
+			if u, err := user.LookupId(uid); err == nil {
+				j.User = u.Username
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("in the system scope a job needs --user (or --sudo to run as root)")
 }
 
 func nextText(j *model.Job, now time.Time) string {
@@ -160,7 +179,8 @@ type listFilter struct {
 	limit                   int
 }
 
-func (lf *listFilter) bind(c *cobra.Command) {
+// bind registers the filter flags. History owns --status and --limit itself.
+func (lf *listFilter) bind(c *cobra.Command, history bool) {
 	fs := c.Flags()
 	fs.BoolVarP(&lf.all, "all", "a", false, "include done and cancelled jobs")
 	fs.BoolVar(&lf.here, "here", false, "only jobs whose path is the current directory")
@@ -168,9 +188,30 @@ func (lf *listFilter) bind(c *cobra.Command) {
 	fs.StringVar(&lf.command, "command", "", "only jobs whose command/script contains this text")
 	fs.BoolVar(&lf.past, "past", false, "only jobs that have already run / are finished")
 	fs.BoolVar(&lf.future, "future", false, "only jobs with an upcoming execution")
-	fs.StringVar(&lf.status, "status", "", "only jobs with this status (active, done, cancelled) or last run status")
 	fs.StringVar(&lf.tag, "tag", "", "only jobs with this tag")
-	fs.IntVarP(&lf.limit, "limit", "n", 0, "maximum number of jobs")
+	if !history {
+		fs.StringVar(&lf.status, "status", "", "only jobs with this status (active, done, cancelled) or last run status")
+		fs.IntVarP(&lf.limit, "limit", "n", 0, "maximum number of jobs")
+	}
+}
+
+// jobSet returns the UUIDs matching the job filters, or nil when no job
+// filter was given. History covers finished jobs, so --all is implied.
+func (lf *listFilter) jobSet(st *store.Store, now time.Time) (map[string]bool, error) {
+	if !lf.here && lf.path == "" && lf.command == "" && lf.tag == "" && !lf.future {
+		return nil, nil
+	}
+	f := *lf
+	f.all, f.past = true, false
+	jobs, err := filterJobs(st, &f, now)
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]bool{}
+	for _, j := range jobs {
+		set[j.UUID] = true
+	}
+	return set, nil
 }
 
 func (lf *listFilter) match(j *model.Job, now time.Time) bool {
@@ -312,7 +353,7 @@ func newListCmd() *cobra.Command {
 			})
 		},
 	}
-	lf.bind(c)
+	lf.bind(c, false)
 	return c
 }
 
@@ -352,7 +393,7 @@ func newJobsCmd() *cobra.Command {
 			})
 		},
 	}
-	lf.bind(c)
+	lf.bind(c, false)
 	return c
 }
 
@@ -362,13 +403,17 @@ func newHistoryCmd() *cobra.Command {
 	var limit int
 	var status string
 	var revisions bool
+	var lf listFilter
 	c := &cobra.Command{
 		Use:     "history [job]",
 		Aliases: []string{"log"},
 		Short:   "Show the run ledger (and audit trail with --revisions)",
-		Args:    cobra.MaximumNArgs(1),
+		Long: `Show the run ledger, newest first. Job filters (--here, --path, --command,
+--tag) narrow it to matching jobs. --future lists upcoming executions instead.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withStore(func(st *store.Store) error {
+				now := time.Now()
 				id := ""
 				if len(args) == 1 {
 					u, err := st.Resolve(args[0])
@@ -377,10 +422,24 @@ func newHistoryCmd() *cobra.Command {
 					}
 					id = u
 				}
+				set, err := lf.jobSet(st, now)
+				if err != nil {
+					return err
+				}
+				keep := func(uuid string) bool { return set == nil || set[uuid] }
+				if lf.future {
+					return printUpcoming(st, set, id, limit, now)
+				}
 				if revisions {
-					revs, err := st.Revisions(id, limit)
+					all, err := st.Revisions(id, 0)
 					if err != nil {
 						return err
+					}
+					var revs []model.Revision
+					for _, r := range all {
+						if keep(r.JobUUID) && (limit <= 0 || len(revs) < limit) {
+							revs = append(revs, r)
+						}
 					}
 					if g.json {
 						return printJSON(revs)
@@ -398,7 +457,7 @@ func newHistoryCmd() *cobra.Command {
 				}
 				var out []model.Run
 				for _, r := range runs {
-					if status == "" || r.Status == status {
+					if (status == "" || r.Status == status) && keep(r.JobUUID) {
 						out = append(out, r)
 						if limit > 0 && len(out) == limit {
 							break
@@ -427,7 +486,33 @@ func newHistoryCmd() *cobra.Command {
 	c.Flags().IntVarP(&limit, "limit", "n", 50, "maximum number of entries (0 = all)")
 	c.Flags().StringVar(&status, "status", "", "only runs with this status (success, fail, error, unknown, skipped, missed)")
 	c.Flags().BoolVarP(&revisions, "revisions", "r", false, "show the audit trail (registrations, edits with reasons, state changes)")
+	lf.bind(c, true)
 	return c
+}
+
+func printUpcoming(st *store.Store, set map[string]bool, id string, limit int, now time.Time) error {
+	jobs, err := st.Active()
+	if err != nil {
+		return err
+	}
+	var out []*model.Job
+	for _, j := range jobs {
+		if j.NextRun == nil || j.Paused || (set != nil && !set[j.UUID]) || (id != "" && j.UUID != id) {
+			continue
+		}
+		if out = append(out, j); limit > 0 && len(out) == limit {
+			break
+		}
+	}
+	if g.json {
+		return printJSON(out)
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "NEXT RUN\tIN\tJOB\tTITLE\tSTATE")
+	for _, j := range out {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", fmtTime(j.NextRun), human(j.NextRun.Sub(now)), j.UUID[:8], short(j.Title, 30), stateText(j))
+	}
+	return tw.Flush()
 }
 
 // ---- inspect ----

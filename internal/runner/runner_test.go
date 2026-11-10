@@ -50,7 +50,15 @@ func TestPrepareAsRoot(t *testing.T) {
 	if err != nil || p.Cred != nil || p.Argv[0] != "true" {
 		t.Fatalf("root job: %+v %v", p, err)
 	}
-	j.User = "cr0-no-such-user"
+	j.User = ""
+	if _, err := r.Prepare(j, []string{"true"}); err == nil {
+		t.Error("non-superuser job without a user must not run as root")
+	}
+	j.Superuser = true
+	if _, err := r.Prepare(j, []string{"true"}); err != nil {
+		t.Errorf("superuser job as root: %v", err)
+	}
+	j.Superuser, j.User = false, "cr0-no-such-user"
 	if _, err := r.Prepare(j, []string{"true"}); err == nil {
 		t.Error("unknown user accepted")
 	}

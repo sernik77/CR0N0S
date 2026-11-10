@@ -98,9 +98,10 @@ func TestWatchTriggers(t *testing.T) {
 		Schedule: model.Schedule{Kind: model.ScheduleWatch, Watch: []string{"in"}, Events: []string{"create"},
 			Debounce: model.Duration(50 * time.Millisecond)}})
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	done := make(chan struct{})
+	defer func() { cancel(); <-done }() // stop the daemon before the store closes
 	d.Poll = 20 * time.Millisecond
-	go d.Run(ctx)
+	go func() { d.Run(ctx); close(done) }()
 	time.Sleep(150 * time.Millisecond)
 	os.WriteFile(filepath.Join(watched, "new"), []byte("x"), 0o644)
 	deadline := time.Now().Add(3 * time.Second)

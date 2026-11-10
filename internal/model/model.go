@@ -90,7 +90,7 @@ type Schedule struct {
 	Kind     string    `json:"kind" toml:"kind"`
 	At       time.Time `json:"at,omitempty" toml:"at,omitempty"`
 	In       Duration  `json:"in,omitempty" toml:"in,omitempty,omitzero"` // relative once-time, resolved at registration (templates)
-	Cron    string    `json:"cron,omitempty" toml:"cron,omitempty"`
+	Cron     string    `json:"cron,omitempty" toml:"cron,omitempty"`
 	Every    Duration  `json:"every,omitempty" toml:"every,omitempty,omitzero"`
 	Watch    []string  `json:"watch,omitempty" toml:"watch,omitempty"`
 	Events   []string  `json:"events,omitempty" toml:"events,omitempty"` // create, write, remove, rename, chmod

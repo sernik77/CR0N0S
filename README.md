@@ -128,7 +128,13 @@ Every listing supports `--json`.
 
 - The CLI writes the database directly; the daemon polls it every second.
 - `notify-send` from the root daemon usually cannot reach a user session.
-- `--sudo-mode exec` needs a graphical polkit agent at execution time.
+- `--sudo-mode exec` needs a polkit agent at execution time. A systemd user
+  unit may not see your graphical session's agent (untested); for unattended
+  superuser jobs use `--sudo-mode preauth` with the system daemon.
+- The system daemon runs `/usr/local/bin/cr0` (root-owned), never a copy in
+  your home. In the system scope every job needs a user (defaults to the user
+  who ran `pkexec`/`sudo`) unless it is a superuser job.
+- `cmd:` condition probes run as the daemon's user (root for the system daemon).
 - A one-shot job whose conditions are not met at its execution time is
   recorded as skipped and finished.
 - Missed runs (daemon down) execute once on start (`catchup = "once"`) or are

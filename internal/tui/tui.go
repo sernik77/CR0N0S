@@ -55,12 +55,13 @@ type model_ struct {
 	width   int
 	height  int
 	err     error
+	ticks   int // condition probes are re-run every 15 ticks (30 s)
 }
 
 // Run starts the TUI.
 func Run(st *store.Store, toggle ToggleFunc) error {
 	m := &model_{st: st, toggle: toggle}
-	m.reload()
+	m.reload(true)
 	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
 }
@@ -71,14 +72,17 @@ func tick() tea.Cmd {
 
 func (m *model_) Init() tea.Cmd { return tick() }
 
-func (m *model_) reload() {
+func (m *model_) reload(inspect bool) {
 	jobs, err := m.st.List()
 	if err != nil {
 		m.err = err
 		return
 	}
 	now := time.Now()
-	m.jobs, m.ins = m.jobs[:0], map[string]core.Inspection{}
+	if m.ins == nil {
+		m.ins = map[string]core.Inspection{}
+	}
+	m.jobs = m.jobs[:0]
 	for _, j := range jobs {
 		if !m.all && j.Status != model.StatusActive {
 			continue
@@ -87,7 +91,9 @@ func (m *model_) reload() {
 			continue
 		}
 		m.jobs = append(m.jobs, j)
-		m.ins[j.UUID] = core.Inspect(m.st, j, now)
+		if _, ok := m.ins[j.UUID]; inspect || !ok {
+			m.ins[j.UUID] = core.Inspect(m.st, j, now)
+		}
 	}
 	if m.cursor >= len(m.jobs) {
 		m.cursor = max(0, len(m.jobs)-1)
@@ -114,7 +120,7 @@ func (m *model_) apply(action string) {
 	} else {
 		m.status = fmt.Sprintf("%s %s", action, j.Title)
 	}
-	m.reload()
+	m.reload(true)
 }
 
 func (m *model_) runNow() tea.Cmd {
@@ -138,11 +144,12 @@ func (m *model_) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case tickMsg:
-		m.reload()
+		m.ticks++
+		m.reload(m.ticks%15 == 0)
 		return m, tick()
 	case statusMsg:
 		m.status = string(msg)
-		m.reload()
+		m.reload(true)
 	case tea.KeyMsg:
 		if m.editing {
 			switch msg.Type {
@@ -155,7 +162,7 @@ func (m *model_) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyRunes, tea.KeySpace:
 				m.filter += string(msg.Runes)
 			}
-			m.reload()
+			m.reload(false)
 			return m, nil
 		}
 		switch msg.String() {
@@ -181,7 +188,7 @@ func (m *model_) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.view = viewList
 		case "a":
 			m.all = !m.all
-			m.reload()
+			m.reload(true)
 		case "/":
 			m.editing, m.filter = true, ""
 		case "m":
@@ -195,7 +202,7 @@ func (m *model_) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			return m, m.runNow()
 		case "g":
-			m.reload()
+			m.reload(true)
 		}
 	}
 	return m, nil

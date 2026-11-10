@@ -183,10 +183,14 @@ RestartSec=5
 WantedBy=%s
 `
 
+// SystemBinary is the root-owned binary the system unit runs. It must not be
+// a user-writable path, or any process of that user could gain root.
+const SystemBinary = "/usr/local/bin/cr0"
+
 // Unit renders the systemd unit for the user or system daemon.
 func Unit(bin string, system bool) string {
 	if system {
-		return fmt.Sprintf(unitTemplate, "system", "network-online.target", bin, " --system", "multi-user.target")
+		return fmt.Sprintf(unitTemplate, "system", "network-online.target", SystemBinary, " --system", "multi-user.target")
 	}
 	return fmt.Sprintf(unitTemplate, "user", "default.target", bin, "", "default.target")
 }
@@ -216,9 +220,12 @@ func newServiceCmd() *cobra.Command {
 		Short: "Install the user unit (or print the steps for the system unit with --system)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if g.system {
-				fmt.Printf("Install the system unit (runs as root, executes pre-authorized superuser jobs and jobs for other users):\n\n"+
+				fmt.Printf("Install the system unit (runs as root, executes pre-authorized superuser jobs and jobs for other users).\n"+
+					"The unit runs the root-owned %s, never a user-writable copy:\n\n"+
+					"  pkexec install -Dm755 -o root -g root %s %s\n"+
 					"  cr0 service unit --system | pkexec tee /etc/systemd/system/cr0.service >/dev/null\n"+
-					"  pkexec systemctl daemon-reload\n  pkexec systemctl enable --now cr0.service\n\nUnit:\n\n%s", Unit(binary(), true))
+					"  pkexec systemctl daemon-reload\n  pkexec systemctl enable --now cr0.service\n\nUnit:\n\n%s",
+					SystemBinary, binary(), SystemBinary, Unit(binary(), true))
 				return nil
 			}
 			cfg, err := os.UserConfigDir()
